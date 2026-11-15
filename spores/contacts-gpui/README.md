@@ -3,7 +3,14 @@
 Skykeep Contacts drawn by the Spore itself, on the native path from
 [`docs/gpui-spores.md`](https://github.com/fungOS-linux/spores/blob/main/docs/gpui-spores.md).
 
-Status: **builds for `wasm32-wasip2`; not yet rendered, because the runner is missing.**
+Status: **renders**. `1200×800`, one frame, through `soil-frame` — the first
+screenshot in this repository that a GPUI Spore drew itself.
+
+![Skykeep Contacts as a GPUI Spore](../docs/media/spore-contacts-gpui.png)
+
+The picture above is the empty state: that run granted no records, so the rail says so
+instead of drawing a blank window. Point `--records` at a `fungos-records` root with an
+iCloud book and the same view fills in.
 
 ## What it is
 
@@ -15,25 +22,26 @@ share; the fonts travel in the package (Lilex), because a component has no syste
 ```
 cargo build --release --target wasm32-wasip2
 # → target/wasm32-wasip2/release/contacts_gpui.wasm
+
+soil-frame target/wasm32-wasip2/release/contacts_gpui.wasm \
+  --frame /tmp/contacts.png --size 1200x800
+# → /tmp/contacts.png 1200x800 status 0
 ```
 
-## What it needs to run
+`soil-frame` is the `--surface frame` the GPUI docs describe: a one-shot capture host
+that provides `wasi:webgpu`, `soil:present` and the grants the caller names, runs the
+guest until it presents, and writes the frame as PNG. It landed in soil as
+`crates/soil-webgpu/src/bin/soil-frame.rs`.
 
-`soil spore run <dir> --surface frame --frame /tmp/contacts.png --size 1200x800` is the
-invocation the GPUI docs describe. Nothing in the soil or spores checkouts implements that
-subcommand yet — the pieces exist (`soil-webgpu` presents, `canvas-winit` hosts a window) but
-the runner that connects a package to a surface does not. So this crate is verified to
-*compile* and not verified to *draw*.
+## What it still needs
 
-Three things are open, in order:
-
-1. **The runner.** `soil spore run <package> --surface frame|window` that instantiates a
-   `runner`-world component, provides `wasi:webgpu` + `soil:present`, and writes the frame.
-2. **The manifest.** No GPUI spore has a `spore.toml` yet (`terminal-gpui` and `probe-gpui`
-   are crates, not packages). A package needs to declare its `runner` module and the
-   `native` surface, and `soil-spore` needs to accept that world.
-3. **Records for a runner world.** The host that runs this must link `soil:records` into the
-   guest beside `soil:present`; without it the component instantiates nothing.
+1. **A manifest.** No GPUI Spore has a `spore.toml` yet (`terminal-gpui` and `probe-gpui`
+   are crates, not packages). A package has to declare its `runner` module and the `native`
+   surface, and `soil-spore` has to accept that world.
+2. **The window surface.** `soil-frame` is capture-only: one frame, no input loop. A live
+   window is `canvas-winit`'s job and it does not launch GPUI packages yet.
+3. **Records on the live path.** `soil-frame --records DIR --book NAME` grants a book
+   read-only; a real host has to do the same from its own records root.
 
 Until (1) lands, the Canvas spores in `spores/icloud-contacts` are the ones you can install
 and open.
