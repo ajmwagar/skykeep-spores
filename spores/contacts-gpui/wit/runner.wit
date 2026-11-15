@@ -1,0 +1,18 @@
+// Skykeep Contacts, drawn by the Spore itself.
+//
+// The native path (`docs/gpui-spores.md` in the spores repository): the guest
+// owns layout, text shaping and drawing, renders offscreen, and hands the host a
+// texture. The host has no idea a contacts list is on it.
+//
+// `soil:records` is the data: the same `fungos.contacts/contact` collection the
+// Canvas view reads, so the two surfaces of the same Spore show the same book.
+package skykeep:contacts-gpui@0.1.0;
+
+world runner {
+  import soil:present/surface@0.1.0;
+  import soil:present/input@0.1.0;
+  import soil:present/cursor@0.1.0;
+  import soil:records/records@0.1.0;
+
+  export run: async func() -> u32;
+}
