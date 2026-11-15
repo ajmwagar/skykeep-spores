@@ -1,0 +1,49 @@
+Skykeep — notice of derivation
+================================
+
+This repository is a fork of Skykeep (https://github.com/YashwanthKamireddi/Skykeep),
+which is free software under the GNU General Public License, version 3. The upstream
+copyright notice is unchanged and travels with the licence text in `LICENSE`:
+
+    Copyright (C) 2026 Yashwanth Kamireddi
+
+What this fork adds
+-------------------
+
+    Copyright (C) 2026 the contributors to this fork
+
+and it is licensed GPL-3.0-only, the same as the work it is built on. There is no
+permission to relicense any of it.
+
+Where the new code came from
+----------------------------
+
+`crates/quince-soil/` — the bridge from the Skykeep library to soil records and content
+ids. New code, written against `quince-core`'s public API and two published contract
+shapes (`soil:records`, `blob: blake3`). It links Skykeep's engine and therefore inherits
+its licence.
+
+`spores/icloud-contacts/`, `spores/icloud-calendar/`, `spores/icloud-photos/` — Spore
+packages whose views are ports of Skykeep's own screens (its contacts rail and card, its
+week grid, its albums-and-months photo layout) and whose Rust modules were written here
+against `soil:records`. The view composition is derived from Skykeep, so these packages
+are GPL-3.0-only and must not be copied into a differently licensed repository.
+
+What did **not** move
+---------------------
+
+No Skykeep code was copied into `fungOS-linux/spores` or `fungOS-linux/soil`. The host
+there is Apache-2.0 OR MIT and stays that way: `soil:records` and `soil:vfs` are
+interfaces, and an interface is not a derivative of the program that calls it. The
+`vfs/cid` proposal in `docs/spore-cid.md` is a specification, not an implementation.
+
+If a future change wants to share code in the other direction — a Spore from this
+repository adopted upstream — the licence of that Spore travels with it, and the honest
+outcome is that, not a relicense.
+
+Trademarks
+----------
+
+Not affiliated with Apple Inc. Apple, iCloud, iPhone, iPad and Mac are trademarks of
+Apple Inc. This fork is not distributed by, endorsed by, or supported by the Skykeep
+maintainers.

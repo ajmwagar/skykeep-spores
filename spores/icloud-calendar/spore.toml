@@ -1,0 +1,55 @@
+schema = 1
+
+[spore]
+id = "org.skykeep.calendar"
+name = "icloud-calendar"
+title = "Skykeep Calendar"
+version = "0.1.0"
+license = "GPL-3.0-only"
+summary = "The weeks iCloud filled in, read from soil records"
+description = "Skykeep Calendar draws the events an iCloud sync wrote into `fungos.calendar/event`: one week, seven days, every calendar's events side by side, with a week either side one press away. It is a reader — the sync half is `quince-soil` — and it never touches the network or a file."
+homepage = "https://github.com/ajmwagar/skykeep-spores"
+
+[docs]
+usage = ["icloud-calendar", "icloud-calendar view <YYYY-MM-DD>", "icloud-calendar list"]
+man = "docs/man.md"
+
+[catalog]
+categories = ["productivity"]
+keywords = ["calendar", "icloud", "caldav", "week"]
+screenshots = [
+  { cid = "ipfs://bafkreigrg2exwcxqklbq5q5qpxcncja53snql7kkox5i4adjtmitrl53me", caption = "One week, Monday to Sunday, with every calendar's events side by side" },
+  { cid = "ipfs://bafkreihz3lvtmuxogmwf4wy52af5mpujuvl7bbnwfodwes2ibuyetdsiyu", caption = "A busy Tuesday beside five empty days, which is most weeks" },
+]
+
+[engine]
+soil = ">=0.1"
+target = "wasm32-wasip2"
+abi = { records = "0.1.0" }
+
+[module]
+path = "module.wasm"
+
+[ui]
+entry = "ui/calendar.lua"
+jit = true
+hot_reload = true
+
+[launch]
+default = "canvas"
+surfaces = ["canvas", "native", "web"]
+
+[grants]
+"soil:records" = "read the events collection; a week is a query over records, not a file"
+
+[denied]
+"soil:http" = ["the sync half runs outside this Spore; a view never talks to Apple"]
+"wasi:filesystem" = ["there is no file to read: an event is a record"]
+"wasi:clocks" = ["the document says which week it draws; a view that asked for the time would draw a different week every second"]
+
+[presentation]
+badge = "Ca"
+color = "#8b9dff"
+mark = "assets/icon.svg"
+# The same drawing, addressed by content, for a store that has fetched it.
+icon = "ipfs://bafkreidbdq7m6jhmafrikdoljlputfxhbyd6gia4katmah76uzbxok4ic4"

@@ -1,0 +1,13 @@
+// Skykeep Calendar for fungOS.
+//
+// Reads the events an iCloud sync wrote into `fungos.calendar/event` — the
+// iCalendar-shaped collection `fungos-records` already defines — and answers the
+// document a week view draws. Nothing here talks to Apple.
+package skykeep:calendar@0.1.0;
+
+world calendar {
+  import soil:records/records@0.1.0;
+
+  /// One action per line of argv; the answer is a JSON document on stdout.
+  export run: func(args: list<string>) -> result<_, string>;
+}

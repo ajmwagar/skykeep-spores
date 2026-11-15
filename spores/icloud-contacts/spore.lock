@@ -1,0 +1,9 @@
+spore-lock 1
+spore org.skykeep.contacts
+version 0.1.0
+file 69fd1e875ffce68b52554ac5b51fc7290d6e73d1c4252438903a05f0a4eb701a 291 assets/icon.svg
+file c6cf46ee00ed0c75973a22f721ded7d1fd6cefa983e3f2bb1c216eae382d1a11 1548 docs/man.md
+file 00c29f951f645fa1f83962584aa300afe65c89338ffd53178de2a50ca01c63c4 242921 module.wasm
+file 6c8eeca4dc1e911f1d7151ac0c166a03b57849fb03898fec8a4e7afad780a989 1937 spore.toml
+file fe59b28accc5c3357738c2b18d6731ebf82b264206f4062d10bba0784ade09c9 7053 ui/contacts.lua
+digest 6b28c79545886baa244c45aaf1af8283a88d3bc26b4c25e818fbaefc0ef41243

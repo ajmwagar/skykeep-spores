@@ -1,0 +1,13 @@
+// Skykeep Contacts for fungOS.
+//
+// Reads the contacts an iCloud sync wrote into `fungos.contacts/contact` — the
+// same collection the contacts Spore writes — and answers the document the view
+// draws. Nothing here talks to Apple: the sync half is `quince-soil`.
+package skykeep:contacts@0.1.0;
+
+world contacts {
+  import soil:records/records@0.1.0;
+
+  /// One action per line of argv; the answer is a JSON document on stdout.
+  export run: func(args: list<string>) -> result<_, string>;
+}

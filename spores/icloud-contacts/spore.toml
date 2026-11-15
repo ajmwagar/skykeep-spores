@@ -1,0 +1,54 @@
+schema = 1
+
+[spore]
+id = "org.skykeep.contacts"
+name = "icloud-contacts"
+title = "Skykeep Contacts"
+version = "0.1.0"
+license = "GPL-3.0-only"
+summary = "The address book iCloud filled in, read from soil records"
+description = "Skykeep Contacts draws the people an iCloud sync wrote into `fungos.contacts/contact`: a rail of names, then the whole card — every email, phone, address, birthday and note Apple keeps. It is a reader: the sync half is `quince-soil`, and the same records open in the contacts Spore's editor."
+homepage = "https://github.com/ajmwagar/skykeep-spores"
+
+[docs]
+usage = ["icloud-contacts", "icloud-contacts view [<id>]", "icloud-contacts search <text>"]
+man = "docs/man.md"
+
+[catalog]
+categories = ["communication", "productivity"]
+keywords = ["contacts", "icloud", "carddav", "address-book"]
+screenshots = [
+  { cid = "ipfs://bafkreicrx5llv5ccwinhtwxdmoofy3huandhs4q3ukjbphzsocb44dstwm", caption = "The rail of names and the whole card: every email, phone, address, birthday and note iCloud keeps" },
+  { cid = "ipfs://bafkreia2l36hb26cps4osfilbtpuf3xhiineo67nwo6iscqujfsgq66iv4", caption = "A contact with one phone number and nothing else is still a row, and still a card" },
+]
+
+[engine]
+soil = ">=0.1"
+target = "wasm32-wasip2"
+abi = { records = "0.1.0" }
+
+[module]
+path = "module.wasm"
+
+[ui]
+entry = "ui/contacts.lua"
+jit = true
+hot_reload = true
+
+[launch]
+default = "canvas"
+surfaces = ["canvas", "native", "web"]
+
+[grants]
+"soil:records" = "read the contacts collection; an address book is a record set, not a file"
+
+[denied]
+"soil:http" = ["the sync half runs outside this Spore; a view never talks to Apple"]
+"wasi:filesystem" = ["there is no file to read: a contact is a record"]
+
+[presentation]
+badge = "Ct"
+color = "#f0a35e"
+mark = "assets/icon.svg"
+# The same drawing, addressed by content, for a store that has fetched it.
+icon = "ipfs://bafkreidj7upiox7442fvevkkyw2r7rzjbvxhhuoeeusdreb2axykj23qdi"

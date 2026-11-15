@@ -25,3 +25,10 @@ packaging/arch/*.log
 
 # Other build folders: the checks' (target-check) and the Android engine's (target-android).
 /target-*/
+
+# Spore packages are their own workspaces, so each builds into its own target. The package is
+# the source plus its artifacts; a build folder is neither.
+/spores/*/target/
+
+# Python bytecode from the fork's own tools.
+__pycache__/

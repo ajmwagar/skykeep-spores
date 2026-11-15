@@ -58,6 +58,159 @@ Six apps, each with its own icon in your launcher and Start menu and a window of
 
 **iCloud in your file manager.** iCloud Drive and Photos are real folders in File Explorer and on Linux, with thumbnails before anything downloads.
 
+## As fungOS spores
+
+Skykeep's sync engine now feeds a host that is not Skykeep. `quince-soil` reads the
+library and writes what a fungOS host already understands — records in `soil:records`,
+photo bytes as content ids — and three Spores draw it.
+
+| Spore | id | reads |
+|---|---|---|
+| [icloud-contacts](spores/icloud-contacts) | `org.skykeep.contacts` | `fungos.contacts/contact` |
+| [icloud-calendar](spores/icloud-calendar) | `org.skykeep.calendar` | `fungos.calendar/event` |
+| [icloud-photos](spores/icloud-photos) | `org.skykeep.photos` | `fungos.photos/*` |
+
+![Skykeep Contacts as a Spore](docs/media/spore-contacts.png)
+
+The shape is the same for all three: Apple talks to `quince-*`, `quince-*` writes one
+SQLite library, `quince-soil` projects that library into records, and a Spore reads the
+records. The Spore never holds a token, never opens a socket, and never names a path.
+
+[`spores/README.md`](spores/README.md) is the map, and
+[`spores/VFS-CID.md`](spores/VFS-CID.md) is the one host addition photos still needs.
+
+## Installing the Spores
+
+### Installing a package
+
+A package installs with the host's own command, `soil-install`, which is not a Spore: it
+fetches nothing by itself, verifies the tar's lock, writes the tree and records what it
+replaced so the change can be rolled back.
+
+```sh
+# from a local .spore file
+soil-install install ./icloud-contacts.spore --root ~/.local/share/fungos/spores
+
+# from a store index, by the tar's CID (the store's own path)
+soil-install install --cid ipfs://bafkreifrjraduygp3fo2gfwttvzmc6d2epcm6zqaunqd74ojbmpjt7e6iu \
+  --index ~/.local/share/fungos/store/index.json \
+  --packages ~/.local/share/fungos/store/packages \
+  --root ~/.local/share/fungos/spores
+
+soil-install status --root ~/.local/share/fungos/spores --json
+soil-install rollback --id org.skykeep.contacts --root ~/.local/share/fungos/spores
+```
+
+Installing all three from this checkout, as run for this cut:
+
+```console
+$ soil-install install icloud-contacts.spore --root /tmp/fungos-spores
+installed org.skykeep.contacts 0.1.0 (6b28c79545886baa244c45aaf1af8283a88d3bc26b4c25e818fbaefc0ef41243) previous=none
+$ soil-install install icloud-calendar.spore --root /tmp/fungos-spores
+installed org.skykeep.calendar 0.1.0 (312a83e9122fe923b74ea7cc3c9bbdc3b09e05e46763a97e8cd6e6c6ff763fe2) previous=none
+$ soil-install install icloud-photos.spore --root /tmp/fungos-spores
+installed org.skykeep.photos 0.1.0 (3c459290adeacf2db32176f6beb2a1c163a387ef464ff5ae00617890dde9426a) previous=none
+```
+
+`install` accepts an unsigned package; `apply` (index → fleet, with rollback) requires a
+signed index and a publisher keyring unless `--allow-unsigned-dev` says otherwise. This fork
+has no publisher key yet, so a release should `soil-spore sign` its tars before publishing
+them.
+
+What is still missing for a *store* install, in the sense of clicking Get in a storefront:
+
+1. A store client on the host — `soil-store serve` and its index exist, and `soil-install`
+   can install from one by CID, but no Spore is allowed to call either yet
+   (`soil:spore.install` is a host capability, and the store Spore's grants still deny it).
+2. A publisher key, so the signature is real rather than absent.
+3. Pinning: see below.
+
+### Artwork and pinning
+
+The artwork a listing cites is content-addressed and reproducible from this checkout:
+
+```sh
+python3 tools/spore-cid.py --check   # every ipfs:// in a manifest is a file in the repo
+python3 tools/spore-cid.py docs/media/spore-contacts.png
+```
+
+Changing a screenshot means re-running that and pasting the new id, which is the whole
+point of the check: a listing that cites bytes nobody can reproduce is a listing nobody
+can verify.
+
+Nothing is pinned to an IPFS node yet, so the tars and screenshots are files here and
+CIDs in a manifest, not bytes a peer can fetch. A release pins them; until then, install
+from the `.spore` file on disk, which is what the commands above do.
+
+### From this checkout
+
+Build, check, pack, install — the whole path, from the soil repo's tools:
+
+```sh
+# in the soil checkout: the two host tools this needs
+cargo build --release -p soil-spore -p soil-install
+
+rustup target add wasm32-wasip2
+for spore in icloud-contacts icloud-calendar icloud-photos; do
+  (cd spores/$spore \
+    && cargo build --release --target wasm32-wasip2 \
+    && cp target/wasm32-wasip2/release/*.wasm module.wasm \
+    && soil-spore lock . \
+    && soil-spore check . --publish \
+    && soil-spore pack . -o "$PWD/$spore.spore" \
+    && soil-install install "$PWD/$spore.spore" --root ~/.local/share/fungos/spores)
+done
+```
+
+`check --publish` passing means the package could be listed (manifest, module, view,
+manual, artwork as CIDs, a reason on every grant); a human still has to read it. `pack`
+writes the tar a store would distribute, and `soil-spore verify <file>.spore` checks one
+back from its bytes alone.
+
+The three packages this checkout builds, as of this cut:
+
+| package | lock digest | tar CID |
+|---|---|---|
+| `icloud-contacts` | `6b28c79545886baa…` | `bafkreifrjraduygp3fo2gfwttvzmc6d2epcm6zqaunqd74ojbmpjt7e6iu` |
+| `icloud-calendar` | `312a83e9122fe923…` | `bafkreieey53evhxmlk7gjiwndmzdjhbqzr242vek3qlsrablh7fhi2fci4` |
+| `icloud-photos` | `3c459290adeacf2d…` | `bafkreighihu4ylaig2yp5ffzkpmfat7ib76hzpmmdpcynnzk5z6n6bisdi` |
+
+Those are reproducible from these bytes, not published anywhere: nothing is pinned to an
+IPFS node yet, so the tars are files until a release pins them.
+
+Then point the host's spore root at the packages — a host reads a directory of packages,
+so a symlink is enough (`~/.local/share/fungos/spores/` is the default root the store's
+own documentation uses):
+
+```sh
+ln -s "$PWD/spores/icloud-contacts" ~/.local/share/fungos/spores/icloud-contacts
+```
+
+### Filling the records
+
+A Spore is a reader, so nothing appears in it until the sync half has written records:
+
+```sh
+# 1. Let Skykeep sync iCloud, as usual. That fills its library.
+# 2. Project the library into records a host can read. SKYKEEP_DATA is the folder that
+#    holds library.db (Linux: ~/.local/share/<bundle id>, macOS: ~/Library/Application
+#    Support/<bundle id>), and the photo cache is the photos/ folder inside it.
+quince-soil export --data "$SKYKEEP_DATA" --cache "$SKYKEEP_DATA/photos" \
+                   --book icloud -o /tmp/icloud.json
+# 3. Hand them to the records host (the ingest sink soil already has).
+export SOIL_RECORDS_TOKEN="$(head -c 32 /dev/urandom | base64)"
+soil-records-ingest --root ~/.local/share/fungos/records --book icloud \
+                    --token-env SOIL_RECORDS_TOKEN --listen 127.0.0.1:8791 &
+curl -sS -X POST http://127.0.0.1:8791/api/records/batch \
+     -H "Authorization: Bearer $SOIL_RECORDS_TOKEN" \
+     --data-binary @/tmp/icloud.json
+```
+
+Contacts and calendars land in collections that already existed, so an iCloud contact
+opens in the contacts Spore and one typed there is readable here. Photos land in their own,
+because a photo is not a value — [`spores/README.md`](spores/README.md) has the
+reasoning.
+
 ## Engineering
 
 A native Rust engine with a light Tauri window on top, one codebase for Linux and Windows on x86 and ARM, and the same engine inside the Android app.
@@ -187,3 +340,10 @@ Bug reports, packaging for your distro, design ideas and code are all welcome. [
 Skykeep is free and open source under the [GPL-3.0](LICENSE).
 
 Copyright (C) 2026 Yashwanth Kamireddi. Not affiliated with Apple Inc. Apple, iCloud and iPhone are trademarks of Apple Inc.
+
+Everything this fork adds is under the same licence: `crates/quince-soil` (the records
+bridge) and the three Spores under `spores/` are GPL-3.0-only, because they are derived
+from Skykeep's window code and its engine. That is a boundary, not a formality — the Spores
+cannot be copied into a repository under another licence without the whole combined work
+moving to the GPL. [`NOTICE`](NOTICE) records what was derived from what.
+

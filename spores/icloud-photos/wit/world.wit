@@ -1,0 +1,15 @@
+// Skykeep Photos for fungOS.
+//
+// Reads `fungos.photos/asset@1`, `fungos.photos/album@1` and
+// `fungos.photos/album-item@1` — the collections `quince-soil` writes — and
+// answers the document a month grid draws. A photo's bytes are not here: each
+// asset names its picture and thumbnail by content id, and resolving one to bytes
+// is the host's `soil:vfs` job (see spores/VFS-CID.md).
+package skykeep:photos@0.1.0;
+
+world photos {
+  import soil:records/records@0.1.0;
+
+  /// One action per line of argv; the answer is a JSON document on stdout.
+  export run: func(args: list<string>) -> result<_, string>;
+}

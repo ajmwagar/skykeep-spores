@@ -1,0 +1,55 @@
+schema = 1
+
+[spore]
+id = "org.skykeep.photos"
+name = "icloud-photos"
+title = "Skykeep Photos"
+version = "0.1.0"
+license = "GPL-3.0-only"
+summary = "The photo library iCloud filled in, read from soil records"
+description = "Skykeep Photos draws the photos an iCloud sync wrote into `fungos.photos/*`: albums down the left, the library by month on the right, every tile naming the content id of its picture. It is a reader — the sync half is `quince-soil` — and the tiles become pictures when the host can resolve a content id to bytes (`vfs/cid`, see spores/VFS-CID.md)."
+homepage = "https://github.com/ajmwagar/skykeep-spores"
+
+[docs]
+usage = ["icloud-photos", "icloud-photos view [<album-id>]", "icloud-photos albums"]
+man = "docs/man.md"
+
+[catalog]
+categories = ["graphics", "media"]
+keywords = ["photos", "icloud", "albums", "library"]
+screenshots = [
+  { cid = "ipfs://bafkreid7qvr7r37qabbi6el77pcqmdicvgt65hd3eaxkzpz4nligjsf4su", caption = "The library by month, newest first, with the albums down the left" },
+  { cid = "ipfs://bafkreiemupen6nrtm7lb5t3qcuouizeaqxummzlbrs7oig5qpraenalqie", caption = "One album open, in the album's own order" },
+]
+
+[engine]
+soil = ">=0.1"
+target = "wasm32-wasip2"
+abi = { records = "0.1.0" }
+
+[module]
+path = "module.wasm"
+
+[ui]
+entry = "ui/photos.lua"
+jit = true
+hot_reload = true
+
+[launch]
+default = "canvas"
+surfaces = ["canvas", "native", "web"]
+
+[grants]
+"soil:records" = "read the photo, album and album-membership collections"
+"soil:vfs-cid" = "find where a photo's content id lives in the workspace, so a tile can draw the picture rather than a mark (landed in soil as `soil:vfs-cid@0.1.0`; a Spore host does not register it yet — see spores/VFS-CID.md)"
+
+[denied]
+"soil:http" = ["the sync half runs outside this Spore; a view never talks to Apple"]
+"wasi:filesystem" = ["there is no path to read: a photo is a record pointing at a content id"]
+
+[presentation]
+badge = "Ph"
+color = "#6fbf9a"
+mark = "assets/icon.svg"
+# The same drawing, addressed by content, for a store that has fetched it.
+icon = "ipfs://bafkreiguspv5xxmbhodbheakdeb4bg2qsn4ah6hg3ebtjgtdr3bwvyrwta"
