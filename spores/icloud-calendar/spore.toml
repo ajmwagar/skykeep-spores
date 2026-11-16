@@ -39,6 +39,12 @@ hot_reload = true
 default = "canvas"
 surfaces = ["canvas", "native", "web"]
 
+# The collections this package reads. A host maps them onto a book; the
+# operator never retypes a schema the package defines.
+[records]
+collections = ["fungos.calendar/event"]
+book = "icloud"
+
 [grants]
 "soil:records" = "read the events collection; a week is a query over records, not a file"
 

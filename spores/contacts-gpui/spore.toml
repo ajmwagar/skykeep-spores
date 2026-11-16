@@ -22,6 +22,12 @@ path = "module.wasm"
 default = "native"
 surfaces = ["native"]
 
+# The collections this package reads. A host maps them onto a book; the
+# operator never retypes a schema the package defines.
+[records]
+collections = ["fungos.contacts/contact"]
+book = "icloud"
+
 [grants]
 "soil:records" = "read the contacts collection; the view is a reader"
 "soil:present" = "hand the host one frame per render"

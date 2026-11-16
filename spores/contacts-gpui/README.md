@@ -40,9 +40,10 @@ guest until it presents, and writes the frame. The earlier per-surface binaries
    surface, and `soil-spore` has to accept that world.
 2. **The window surface.** `--surface frame` is capture-only: one frame, no input loop. A live
    window is `canvas-winit`'s job and it does not launch GPUI packages yet.
-3. **Records on the live path.** The runner links `soil:records` from the grants a
-   package declares; this package declares the collection, and a host still has to map
-   it onto a records root.
+3. **Records on the live path.** The package declares its collection in `[records]`,
+   so a host grants it from its own records root — no `--collection` for anyone to type.
+   A launcher that passes a records root gets the address book; without one, it gets the
+   empty state.
 
 Until (1) lands, the Canvas spores in `spores/icloud-contacts` are the ones you can install
 and open.

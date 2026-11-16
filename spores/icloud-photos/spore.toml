@@ -39,6 +39,12 @@ hot_reload = true
 default = "canvas"
 surfaces = ["canvas", "native", "web"]
 
+# The collections this package reads. A host maps them onto a book; the
+# operator never retypes a schema the package defines.
+[records]
+collections = ["fungos.photos/asset@1", "fungos.photos/album@1", "fungos.photos/album-item@1"]
+book = "icloud"
+
 [grants]
 "soil:records" = "read the photo, album and album-membership collections"
 "soil:vfs-cid" = "find where a photo's content id lives in the workspace, so a tile can draw the picture rather than a mark (landed in soil as `soil:vfs-cid@0.1.0`; a Spore host does not register it yet — see spores/VFS-CID.md)"

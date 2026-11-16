@@ -57,6 +57,23 @@ writes one JSON document:
 is not a second store — it is a producer for the one that exists. `content` is the ingress
 half of the content seam: a path is read once, hashed, and never travels with a record.
 
+### Declaring records
+
+A records-shaped Spore names its collections in its manifest, so a host can grant
+them without an operator retyping a schema the package defines:
+
+```toml
+[records]
+collections = ["fungos.contacts/contact"]
+book = "icloud"
+```
+
+The grant stays `soil:records` — the table says *which* collections, and the host
+still decides whether the capability is granted. A command-line `--collection`
+still wins, which is how a write is granted; declared collections are read-only.
+Without this table the launcher had nothing to grant, and `soil spore run`
+demanded a `--collection` nobody at a launcher could type.
+
 ### Collections
 
 | collection | shape | existing? |

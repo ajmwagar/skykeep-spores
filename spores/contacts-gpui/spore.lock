@@ -1,0 +1,6 @@
+spore-lock 1
+spore org.skykeep.contacts-gpui
+version 0.1.0
+file 0222d98963c2204dbc93d81b6b75ee2b1f0514a4eb208183020d4da8701ab2e5 9622093 module.wasm
+file 86d179419f7e1f6ae6d59794dc8c56b6ac62b78a8cc91205ccbe4297b957ffeb 1272 spore.toml
+digest 0f7ce11df852bfa15eb837fb162acf4c65d8e4e28eed671998e175d9260b402c

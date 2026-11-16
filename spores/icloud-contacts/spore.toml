@@ -39,6 +39,12 @@ hot_reload = true
 default = "canvas"
 surfaces = ["canvas", "native", "web"]
 
+# The collections this package reads. A host maps them onto a book; the
+# operator never retypes a schema the package defines.
+[records]
+collections = ["fungos.contacts/contact"]
+book = "icloud"
+
 [grants]
 "soil:records" = "read the contacts collection; an address book is a record set, not a file"
 
