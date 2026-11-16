@@ -140,12 +140,17 @@ impl Person {
 }
 
 /// The address book, read once per frame loop from `soil:records`.
-fn load() -> Vec<Person> {
+fn load() -> (Vec<Person>, String) {
     let mut people = Vec::new();
     let mut cursor: Option<String> = None;
     loop {
-        let Ok(page) = records::scan(CONTACT_SCHEMA, cursor.as_deref(), PAGE) else {
-            break;
+        let page = match records::scan(CONTACT_SCHEMA, cursor.as_deref(), PAGE) {
+            Ok(page) => page,
+            Err(error) => {
+                // A reader that renders nothing must say why on screen: a guest's
+                // stderr is not something a host is obliged to show anybody.
+                return (people, format!("records: {error:?}"));
+            }
         };
         for entry in page.entries {
             if entry.deleted || entry.schema != CONTACT_SCHEMA {
@@ -169,7 +174,12 @@ fn load() -> Vec<Person> {
             .cmp(&b.name.to_lowercase())
             .then_with(|| a.id.cmp(&b.id))
     });
-    people
+    let status = if people.is_empty() {
+        "records: no contacts in this book".to_string()
+    } else {
+        format!("records: {} contacts", people.len())
+    };
+    (people, status)
 }
 
 struct Contacts {
@@ -177,17 +187,20 @@ struct Contacts {
     height: u32,
     scale: f64,
     people: Vec<Person>,
+    status: String,
     selected: usize,
 }
 
 impl Contacts {
     fn new() -> Self {
         let (width, height) = surface::size();
+        let (people, status) = load();
         Self {
             width,
             height,
             scale: surface::scale(),
-            people: load(),
+            people,
+            status,
             selected: 0,
         }
     }
@@ -399,8 +412,8 @@ impl Render for Contacts {
                             .text_size(px(11.0))
                             .text_color(rgb(MUTED))
                             .child(SharedString::from(format!(
-                                "iCloud · {count} people · {}×{} at {}x",
-                                self.width, self.height, self.scale
+                                "{count} people · {} · {}×{} at {}x",
+                                self.status, self.width, self.height, self.scale
                             ))),
                     ),
             )

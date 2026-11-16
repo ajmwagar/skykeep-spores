@@ -1,0 +1,36 @@
+schema = 1
+
+[spore]
+id = "org.skykeep.contacts-gpui"
+name = "contacts-gpui"
+title = "Skykeep Contacts (native)"
+version = "0.1.0"
+license = "GPL-3.0-only"
+summary = "Skykeep Contacts drawn by the Spore itself, on the GPUI path"
+description = "The same address book as org.skykeep.contacts, drawn natively: the guest owns layout, shaping and drawing, renders offscreen, and presents one texture through `soil:present`. Reads `fungos.contacts/contact` from `soil:records`."
+homepage = "https://github.com/ajmwagar/skykeep-spores"
+
+[engine]
+soil = ">=0.1"
+target = "wasm32-wasip2"
+abi = { records = "0.1.0" }
+
+[module]
+path = "module.wasm"
+
+[launch]
+default = "native"
+surfaces = ["native"]
+
+[grants]
+"soil:records" = "read the contacts collection; the view is a reader"
+"soil:present" = "hand the host one frame per render"
+"wasi:webgpu" = "the guest draws with its own GPU device, offscreen"
+
+[denied]
+"soil:http" = ["the sync half runs outside this Spore"]
+"wasi:filesystem" = ["there is no file to read: a contact is a record"]
+
+[presentation]
+badge = "Ct"
+color = "#f0a35e"
