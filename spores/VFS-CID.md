@@ -1,9 +1,21 @@
 # `vfs/cid` — resolving a content id inside the namespace
 
 Status: **landed in soil as `soil:vfs-cid@0.1.0`** (interface `cid`, one function
-`find`), implemented on `soil_host::vfs_host::VfsHost` with three tests. A host that runs a
-Spore still has to register it, and a surface still has to paint the bytes: see
-[what remains](#what-remains).
+`find`), implemented on `soil_host::vfs_host::VfsHost` with four tests, and **registered in
+the runner** (`crates/soil-webgpu` links it beside `soil:vfs`, so a Spore that declares the
+grant can call it). The first Spore that paints a content id is
+[`spores/photos-view`](photos-view): it rasterizes its own frame, so the "surface that
+paints" below is the Spore itself rather than a host node.
+
+```
+record  thumb.content_id = "blake3:…"
+   │  soil:vfs-cid   find(cid)        → paths the caller could already list
+   │  soil:vfs       read(path)       → bytes, in the host's range budget
+   │  (guest)        decode, lay out  → one RGBA frame
+   └  soil:present   present_rgba(…)  → the window, or one captured PNG
+```
+
+![Skykeep Photos, drawn from content ids](media/photos-view.png)
 
 ## The gap
 
@@ -74,23 +86,36 @@ and `stat`, same `MAX_PAGE` budget, results in path order so pagination is stabl
 holding the same bytes both answer, which is the point: the identity is the bytes, not the
 name.
 
-Tests (`crates/soil-host/tests/vfs_cid.rs`): every path holding the bytes, paging in path
-order, an unknown id as an empty page, a malformed id as `invalid`, a zero limit as
-`over-budget`.
+Tests (`crates/soil/tests/vfs_cid.rs`): every path holding the bytes, paging in path order,
+an unknown id as an empty page, a malformed id as `invalid`, a zero limit as `over-budget`,
+and the one path a viewer walks — write, `find`, `read`, same bytes back.
+
+It is registered in `crates/soil-webgpu` next to `soil:vfs`, from the same host object: a
+lookup answered from a second index could disagree with the listing a Spore already saw.
+
+## What landed on top of it
+
+`spores/photos-view` is the first Spore that draws a picture from a content id, and it did
+not need a new host surface: the guest rasterizes its own frame and hands it over through
+`soil:present/surface.present-rgba`, which the runner already accepts. So the "surface that
+paints" turned out to be the Spore, not a host node — the composition stays the Spore's and
+the host keeps the window.
+
+The other half of that flow is bytes: a namespace holds what was *written* into it, and a
+`Photographs` folder on disk is not a workspace. `soil content import --manifest FILE` puts
+the bytes an exporter listed (a `quince-soil macos-photos --chunks` run writes one) into a
+workspace by identity, checking that each file hashes to the id its record names.
 
 ## What remains
 
-1. **Register it where a Spore runs.** Each host that links `soil:vfs` for a guest adds
-   `soil:vfs-cid/cid@0.1.0` beside it — one registration line. In this repo that is
-   `soil-command` and the per-capability host crates; the spores repo's `canvas-*` hosts are
-   the other place it will be needed.
-2. **A surface that paints a content id.** The lookup gives a host a path; the pixels are a
-   host surface. The photos view is already written for it — a tile wants
-   `ui.host_surface("photo", { cid = asset.thumb })` — so the work is host-side: resolve the
-   id through `find`, read the thumbnail, hand the renderer a texture, and cache it.
-3. **Then the Spore changes by a few lines.** Import `soil:vfs-cid` in
-   `spores/icloud-photos/wit/world.wit`, declare it in `[engine] abi`, and let the tile draw
-   the picture instead of `IMG`/`VID`/`LIV`.
-
-Until (1) and (2) land, the photo grid renders what it can prove: the kind, the day, the
-filename and the content id. The grid is right; the pixels are missing.
+1. **A canvas text node, or a font.** The view draws pictures and nothing else: a tile
+   cannot say "2 March" or "Boat" because the guest has no text rasterizer and the
+   `soil:canvas` scene has an `Image` node but no text one on this path. The Lua canvas
+   Spores (`spores/icloud-photos`) still name a content id they cannot paint, because their
+   host is the core-Wasm one and it does not register `soil:vfs-cid` yet.
+2. **Decode where the bytes are.** The guest carries a JPEG decoder so it can draw; a host
+   that decodes once and caches a texture would keep a library's worth of decoders out of
+   every Spore. `soil:media/image` exists for exactly that and is not linked in the runner.
+3. **Hydration.** A record whose bytes are in iCloud draws a placeholder tile, which is
+   honest and not yet useful: fetching the original by its `icloud` source is the next
+   milestone.

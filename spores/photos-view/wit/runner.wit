@@ -1,0 +1,18 @@
+package soil:photos-view@0.1.0;
+
+/// A Spore's WIT is its contract: this world names exactly the grants the view uses, so a
+/// host linking it cannot hand over a capability nobody asked for.
+///
+/// `soil:vfs` and `soil:vfs-cid` are the pair that makes a photo drawable: the record names
+/// `blake3:…`, `find` answers where those bytes are, and `read` fetches them. Neither is
+/// authority — both answer only inside the workspace the host granted.
+world runner {
+  import soil:present/surface@0.1.0;
+  import soil:present/input@0.1.0;
+  import soil:vfs/vfs@1.0.0;
+  import soil:vfs-cid/cid@0.1.0;
+  import soil:records/records@0.1.0;
+
+  /// Draw one frame and return a host-visible status code.
+  export run: async func() -> u32;
+}

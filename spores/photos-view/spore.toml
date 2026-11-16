@@ -1,0 +1,42 @@
+schema = 1
+
+[spore]
+id = "org.skykeep.photos-view"
+name = "photos-view"
+title = "Skykeep Photos (view)"
+version = "0.1.0"
+license = "GPL-3.0-only"
+summary = "The photo library as pictures: every tile fetched by content id"
+description = "Skykeep Photos, drawn by the Spore itself. It reads `fungos.photos/asset@1` from `soil:records`, asks `soil:vfs-cid` where each preview's `blake3:` identity lives in the workspace, reads those bytes through `soil:vfs`, decodes them, and presents one RGBA frame through `soil:present` — no GPU, no element tree, no path authority. The first Spore that draws a picture from a content id."
+homepage = "https://github.com/ajmwagar/skykeep-spores"
+
+[engine]
+soil = ">=0.1"
+target = "wasm32-wasip2"
+abi = { records = "0.1.0", vfs = "1.0.0", "vfs-cid" = "0.1.0", surface = "0.1.0" }
+
+[module]
+path = "module.wasm"
+
+[launch]
+default = "native"
+surfaces = ["native"]
+
+[records]
+collections = ["fungos.photos/asset@1"]
+book = "photos"
+
+[grants]
+"soil:records" = "read the photo assets; the view is a reader"
+"soil:vfs" = "read the bytes a photo record names, inside the granted workspace only"
+"soil:vfs-cid" = "turn a record's `blake3:` content id into the workspace paths that hold it"
+"soil:present" = "hand the host one RGBA frame per render"
+
+[denied]
+"soil:http" = ["the sync half runs outside this Spore; a view never talks to Apple"]
+"wasi:filesystem" = ["there is no path to read: the workspace is reached through soil:vfs"]
+"wasi:webgpu" = ["the frame is rasterized in software; a GPU would add a device to grant for no pixels"]
+
+[presentation]
+badge = "Pv"
+color = "#6fbf9a"

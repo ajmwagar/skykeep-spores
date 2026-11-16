@@ -69,15 +69,39 @@ photo bytes as content ids — and three Spores draw it.
 | [icloud-contacts](spores/icloud-contacts) | `org.skykeep.contacts` | `fungos.contacts/contact` |
 | [icloud-calendar](spores/icloud-calendar) | `org.skykeep.calendar` | `fungos.calendar/event` |
 | [icloud-photos](spores/icloud-photos) | `org.skykeep.photos` | `fungos.photos/*` |
+| [photos-view](spores/photos-view) | `org.skykeep.photos-view` | `fungos.photos/asset@1`, drawn |
 
 ![Skykeep Contacts as a Spore](docs/media/spore-contacts.png)
 
-The shape is the same for all three: Apple talks to `quince-*`, `quince-*` writes one
+The shape is the same for all of them: Apple talks to `quince-*`, `quince-*` writes one
 SQLite library, `quince-soil` projects that library into records, and a Spore reads the
 records. The Spore never holds a token, never opens a socket, and never names a path.
 
+![Skykeep Photos as a Spore, every tile fetched by content id](docs/media/photos-view.png)
+
+The top row is real: `photos-view` reads the records, and each tile is a picture it found by
+content id — `soil:vfs-cid` turns a record's `blake3:` into a path, `soil:vfs` reads the
+bytes, and the Spore decodes and presents one frame. A tile with no picture is a record
+whose bytes are not in this workspace, which is the honest answer rather than a blank.
+
+The bytes have to be *put* there first: a namespace holds what was written into it, and a
+Photos library on disk is not a workspace. `soil content import` takes the manifest a
+`quince-soil macos-photos --chunks` run writes and stores each file under the id its record
+names:
+
+```sh
+quince-soil macos-photos --library "$HOME/Pictures/Photos Library.photoslibrary" \
+                         --chunks /tmp/photos
+soil --root ~/.local/share/fungos/vfs content import --manifest /tmp/photos/content.json
+soil spore run spores/photos-view --surface frame --frame /tmp/photos.png \
+     --records ~/.local/share/fungos/records --vfs-root ~/.local/share/fungos/vfs
+```
+
+A library's previews are 3.5 GiB; `--limit N` imports a sample instead, and the tiles whose
+bytes were not imported stay grey.
+
 [`spores/README.md`](spores/README.md) is the map,
-[`spores/VFS-CID.md`](spores/VFS-CID.md) is the one host addition photos still needs, and
+[`spores/VFS-CID.md`](spores/VFS-CID.md) is the content-id path end to end, and
 [`docs/photos-store.md`](docs/photos-store.md) is what a photo record contains and why.
 
 ## Installing the Spores
