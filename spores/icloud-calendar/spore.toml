@@ -43,7 +43,7 @@ surfaces = ["canvas", "native", "web"]
 # operator never retypes a schema the package defines.
 [records]
 collections = ["fungos.calendar/event"]
-book = "icloud"
+book = "calendar"
 
 [grants]
 "soil:records" = "read the events collection; a week is a query over records, not a file"

@@ -65,8 +65,12 @@ them without an operator retyping a schema the package defines:
 ```toml
 [records]
 collections = ["fungos.contacts/contact"]
-book = "icloud"
+book = "contacts"
 ```
+
+The book is a **system** book, not one per source: iCloud is a source, so a contact
+the bridge writes lands in `contacts` and opens in the system contacts Spore — the
+same record as one typed there. Calendars land in `calendar`, photos in `photos`.
 
 The grant stays `soil:records` — the table says *which* collections, and the host
 still decides whether the capability is granted. A command-line `--collection`

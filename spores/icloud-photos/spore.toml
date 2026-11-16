@@ -43,7 +43,7 @@ surfaces = ["canvas", "native", "web"]
 # operator never retypes a schema the package defines.
 [records]
 collections = ["fungos.photos/asset@1", "fungos.photos/album@1", "fungos.photos/album-item@1"]
-book = "icloud"
+book = "photos"
 
 [grants]
 "soil:records" = "read the photo, album and album-membership collections"
