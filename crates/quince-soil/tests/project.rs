@@ -181,6 +181,7 @@ fn a_cached_original_becomes_a_content_id_and_the_album_a_membership_record() {
     let options = Options {
         books: Default::default(),
         cache: Some(cache),
+        phash: true,
     };
     let batch = quince_soil::project(&library, &options).unwrap();
 

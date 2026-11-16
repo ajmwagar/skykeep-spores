@@ -76,8 +76,9 @@ The shape is the same for all three: Apple talks to `quince-*`, `quince-*` write
 SQLite library, `quince-soil` projects that library into records, and a Spore reads the
 records. The Spore never holds a token, never opens a socket, and never names a path.
 
-[`spores/README.md`](spores/README.md) is the map, and
-[`spores/VFS-CID.md`](spores/VFS-CID.md) is the one host addition photos still needs.
+[`spores/README.md`](spores/README.md) is the map,
+[`spores/VFS-CID.md`](spores/VFS-CID.md) is the one host addition photos still needs, and
+[`docs/photos-store.md`](docs/photos-store.md) is what a photo record contains and why.
 
 ## Installing the Spores
 
@@ -188,7 +189,8 @@ ln -s "$PWD/spores/icloud-contacts" ~/.local/share/fungos/spores/icloud-contacts
 
 ### Filling the records
 
-A Spore is a reader, so nothing appears in it until the sync half has written records:
+A Spore is a reader, so nothing appears in it until the sync half has written records.
+There are two sync halves, and the second needs no Apple ID at all:
 
 ```sh
 # 1. Let Skykeep sync iCloud, as usual. That fills its library.
@@ -196,20 +198,39 @@ A Spore is a reader, so nothing appears in it until the sync half has written re
 #    holds library.db (Linux: ~/.local/share/<bundle id>, macOS: ~/Library/Application
 #    Support/<bundle id>), and the photo cache is the photos/ folder inside it.
 quince-soil export --data "$SKYKEEP_DATA" --cache "$SKYKEEP_DATA/photos" \
-                   --book icloud -o /tmp/icloud.json
+                   -o /tmp/library.json
 # 3. Hand them to the records host (the ingest sink soil already has).
 export SOIL_RECORDS_TOKEN="$(head -c 32 /dev/urandom | base64)"
-soil-records-ingest --root ~/.local/share/fungos/records --book icloud \
+soil-records-ingest --root ~/.local/share/fungos/records \
                     --token-env SOIL_RECORDS_TOKEN --listen 127.0.0.1:8791 &
 curl -sS -X POST http://127.0.0.1:8791/api/records/batch \
      -H "Authorization: Bearer $SOIL_RECORDS_TOKEN" \
-     --data-binary @/tmp/icloud.json
+     --data-binary @/tmp/library.json
 ```
 
-Contacts and calendars land in collections that already existed, so an iCloud contact
-opens in the contacts Spore and one typed there is readable here. Photos land in their own,
-because a photo is not a value — [`spores/README.md`](spores/README.md) has the
-reasoning.
+Contacts and calendars land in the system books (`contacts`, `calendar`), so an iCloud
+contact opens in the contacts Spore and one typed there is readable here. Photos land in
+`photos`, because a photo is not a value — [`docs/photos-store.md`](docs/photos-store.md)
+is that contract.
+
+### Without an Apple ID
+
+The Mac in front of you is already signed in, and it keeps most of what iCloud holds on
+disk. Reading it is a file problem, not a login one:
+
+```sh
+# Contacts: 2 records from AddressBook-v22.abcddb, no session involved.
+quince-soil macos-contacts --data ~/Library/Application\ Support/AddressBook
+
+# Photos: 22,683 assets, 40 albums, 19,649 previews — metadata and pictures that are
+# already here, hashed and chunked for the ingest sink above.
+quince-soil macos-photos --library ~/Pictures/Photos\ Library.photoslibrary --chunks /tmp/photos
+```
+
+What the Mac has is what iCloud has already downloaded: an Optimize Storage library keeps
+every preview (3.5 GiB here) and few originals, so a record carries the preview's content
+id and the CloudKit name to hydrate the original by. Calendars are the exception — they are
+not mirrored to disk — so they still need the sign-in above.
 
 ## Engineering
 

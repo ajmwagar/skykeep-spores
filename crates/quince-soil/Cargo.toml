@@ -10,6 +10,7 @@ description = "Project Skykeep's iCloud library into soil records and a content 
 anyhow.workspace = true
 blake3 = "1"
 jiff = "0.2.37"
+jpeg-decoder = "0.3"
 quince-core = { path = "../quince-core" }
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 serde.workspace = true

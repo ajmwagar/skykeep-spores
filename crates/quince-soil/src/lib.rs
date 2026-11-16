@@ -15,8 +15,12 @@
 //! The split matters. A record is small, versioned, and syncs by value; a photo is large,
 //! immutable, and syncs by reference. Putting bytes in a record body would make every sync
 //! pass carry a library.
+//!
+//! `docs/photos-store.md` is the contract [`asset_body`] implements, and the reasons a photo
+//! record looks the way it does.
 
 pub mod macos;
+pub mod phash;
 
 use std::path::{Path, PathBuf};
 
@@ -71,6 +75,83 @@ pub struct Batch {
     pub content: Vec<Content>,
 }
 
+/// Every field a [`ASSET_SCHEMA`] body carries, before it is one JSON document.
+///
+/// Two sources project into this and nothing else does, so the macOS library and Skykeep's
+/// library produce the same record shape: a photos Spore does not learn which one wrote a
+/// record, and a field added here is added for both at once. Fields a source does not know
+/// are empty — never absent, because a record that loses a key is a record every reader has
+/// to special-case.
+pub struct AssetDraft {
+    pub filename: Option<String>,
+    /// `image`, `video` or `live`.
+    pub kind: &'static str,
+    /// Unix seconds; `0` when the source does not know.
+    pub taken_at: i64,
+    pub added_at: Option<i64>,
+    pub width: i64,
+    pub height: i64,
+    /// Seconds, for a video.
+    pub duration: Option<f64>,
+    pub uti: Option<String>,
+    /// The original's size in bytes.
+    pub size: Option<i64>,
+    pub favorite: bool,
+    pub hidden: bool,
+    pub deleted: bool,
+    pub deleted_at: Option<i64>,
+    pub title: Option<String>,
+    pub caption: Option<String>,
+    pub rating: i64,
+    pub keywords: Vec<String>,
+    /// People the source already named, for free: Apple clusters faces on device.
+    pub people: Vec<String>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    /// `dhash64:<hex>`, when a picture was read.
+    pub phash: Option<String>,
+    /// Where this asset can be hydrated from, one entry per backend.
+    pub sources: Vec<Value>,
+    pub content: Option<Value>,
+    pub thumb: Option<Value>,
+    pub live: Option<Value>,
+}
+
+/// One asset record body.
+///
+/// `content`, `thumb` and `live` are `{content_id, size, media_type}` or null; `sources` says
+/// where the bytes may be fetched when they are not here. Both are needed: content ids are
+/// identity and travel, source locators are host state and do not.
+pub fn asset_body(asset: AssetDraft) -> Value {
+    json!({
+        "filename": asset.filename,
+        "kind": asset.kind,
+        "taken_at": asset.taken_at,
+        "added_at": asset.added_at,
+        "width": asset.width,
+        "height": asset.height,
+        "duration": asset.duration,
+        "uti": asset.uti,
+        "size": asset.size,
+        "favorite": asset.favorite,
+        "hidden": asset.hidden,
+        "deleted": asset.deleted,
+        "deleted_at": asset.deleted_at,
+        "title": asset.title,
+        "caption": asset.caption,
+        "rating": asset.rating,
+        "keywords": asset.keywords,
+        "people": asset.people,
+        "latitude": asset.latitude,
+        "longitude": asset.longitude,
+        "phash": asset.phash,
+        "sources": asset.sources,
+        "content": asset.content,
+        "thumb": asset.thumb,
+        "live": asset.live,
+    })
+}
+
 /// The books each domain's records land in.
 ///
 /// iCloud is one source into the system's own books, not a book of its own: a contact the
@@ -99,6 +180,9 @@ pub struct Options {
     /// Skykeep's `photos/` cache directory (under its state dir). Absent: records only, with
     /// every `content` field `null`, which is what a host holding no photo bytes should show.
     pub cache: Option<PathBuf>,
+    /// Hash every thumbnail that is read, so near-duplicates can be found later. Off makes a
+    /// metadata-only pass, which is a different question and a much faster one.
+    pub phash: bool,
 }
 
 impl Default for Options {
@@ -106,6 +190,7 @@ impl Default for Options {
         Self {
             books: Books::default(),
             cache: None,
+            phash: true,
         }
     }
 }
@@ -123,8 +208,12 @@ pub fn export(data: &Path, options: &Options) -> Result<Batch> {
 /// Project an already-open library, for callers (and tests) that own one.
 pub fn project(library: &Library, options: &Options) -> Result<Batch> {
     let mut batch = Batch::default();
-    batch.records.extend(contacts(library, &options.books.contacts)?);
-    batch.records.extend(events(library, &options.books.calendar)?);
+    batch
+        .records
+        .extend(contacts(library, &options.books.contacts)?);
+    batch
+        .records
+        .extend(events(library, &options.books.calendar)?);
     let (records, content) = photos(library, options)?;
     batch.records.extend(records);
     batch.content.extend(content);
@@ -250,7 +339,7 @@ fn photos(library: &Library, options: &Options) -> Result<(Vec<Record>, Vec<Cont
     let mut records = Vec::with_capacity(photos.len());
     let mut content = Vec::new();
     for photo in &photos {
-        let (body, mut blobs) = asset(photo, options.cache.as_deref())?;
+        let (body, mut blobs) = asset(photo, options.cache.as_deref(), options.phash)?;
         records.push(Record {
             book: book.clone(),
             id: photo.id.clone(),
@@ -300,20 +389,28 @@ fn photos(library: &Library, options: &Options) -> Result<(Vec<Record>, Vec<Cont
     Ok((records, content))
 }
 
-fn asset(photo: &Photo, cache: Option<&Path>) -> Result<(Value, Vec<Content>)> {
+fn asset(photo: &Photo, cache: Option<&Path>, want_phash: bool) -> Result<(Value, Vec<Content>)> {
     let mut blobs = Vec::new();
     let original = cache
         .map(|cache| cache.join("original").join(cache_name(&photo.id).as_ref()))
         .filter(|path| path.is_file());
     let content = match original {
-        Some(path) => Some(ingest(&path, media_type(photo.uti.as_deref()), &mut blobs)?),
+        Some(path) => Some(
+            ingest(
+                &path,
+                media_type(photo.uti.as_deref()),
+                &mut blobs,
+                want_phash,
+            )?
+            .value,
+        ),
         None => None,
     };
     let thumb_path = cache
         .map(|cache| cache.join("thumb").join(cache_name(&photo.id).as_ref()))
         .filter(|path| path.is_file());
-    let thumb = match thumb_path {
-        Some(path) => Some(ingest(&path, "image/jpeg", &mut blobs)?),
+    let thumb = match &thumb_path {
+        Some(path) => Some(ingest(path, "image/jpeg", &mut blobs, want_phash)?),
         None => None,
     };
     let live_path = cache
@@ -321,43 +418,69 @@ fn asset(photo: &Photo, cache: Option<&Path>) -> Result<(Value, Vec<Content>)> {
         .map(|cache| cache.join("live").join(cache_name(&photo.id).as_ref()))
         .filter(|path| path.is_file());
     let live = match live_path {
-        Some(path) => Some(ingest(&path, "video/quicktime", &mut blobs)?),
+        Some(path) => Some(ingest(&path, "video/quicktime", &mut blobs, want_phash)?.value),
         None => None,
     };
 
-    let body = json!({
-        "filename": photo.filename,
-        "kind": match photo.kind {
+    // The thumbnail is the small copy we always read, so it is the one worth hashing: hashing
+    // the original as well would record the same picture twice.
+    let phash = thumb.as_ref().and_then(|thumb| thumb.phash.clone());
+    let body = asset_body(AssetDraft {
+        filename: photo.filename.clone(),
+        kind: match photo.kind {
             Kind::Image => "image",
             Kind::Video => "video",
             Kind::Live => "live",
         },
-        "taken_at": photo.taken_at,
-        "added_at": photo.added_at,
-        "width": photo.width,
-        "height": photo.height,
-        "duration": photo.duration,
-        "uti": photo.uti,
-        "size": photo.size,
-        "favorite": photo.favorite,
-        "hidden": photo.hidden,
-        "deleted": photo.deleted,
-        "deleted_at": photo.deleted_at,
-        "title": photo.title,
-        "caption": photo.caption,
-        "rating": photo.rating,
-        "keywords": photo.keywords,
-        "latitude": photo.latitude,
-        "longitude": photo.longitude,
-        "content": content,
-        "thumb": thumb,
-        "live": live,
+        taken_at: photo.taken_at,
+        added_at: photo.added_at,
+        width: photo.width,
+        height: photo.height,
+        duration: photo.duration,
+        uti: photo.uti.clone(),
+        size: photo.size,
+        favorite: photo.favorite,
+        hidden: photo.hidden,
+        deleted: photo.deleted,
+        deleted_at: photo.deleted_at,
+        title: photo.title.clone(),
+        caption: photo.caption.clone(),
+        rating: photo.rating,
+        keywords: photo.keywords.clone(),
+        // iCloud's photo records carry no faces: Apple does that clustering on the device and
+        // never syncs the clusters. The macOS source reads them where they live.
+        people: Vec::new(),
+        latitude: photo.latitude,
+        longitude: photo.longitude,
+        phash,
+        sources: vec![json!({
+            "provider": "icloud",
+            "id": photo.id,
+            "master": photo.master,
+        })],
+        content: content.clone(),
+        thumb: thumb.map(|thumb| thumb.value),
+        live,
     });
     Ok((body, blobs))
 }
 
+/// One blob, read once: its content id, its size, and the picture's perceptual hash.
+///
+/// The hash comes back with the bytes because they are already in memory — decoding a
+/// thumbnail we had to read anyway is the cheap part of a pass that has to read it at all.
+pub(crate) struct Ingested {
+    pub value: Value,
+    pub phash: Option<String>,
+}
+
 /// Hash one file into a content manifest entry.
-fn ingest(path: &Path, media_type: &str, blobs: &mut Vec<Content>) -> Result<Value> {
+pub(crate) fn ingest(
+    path: &Path,
+    media_type: &str,
+    blobs: &mut Vec<Content>,
+    want_phash: bool,
+) -> Result<Ingested> {
     let bytes = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
     let content_id = format!("blake3:{}", blake3::hash(&bytes).to_hex());
     blobs.push(Content {
@@ -366,11 +489,18 @@ fn ingest(path: &Path, media_type: &str, blobs: &mut Vec<Content>) -> Result<Val
         size: bytes.len() as u64,
         media_type: media_type.to_string(),
     });
-    Ok(json!({
-        "content_id": content_id,
-        "size": bytes.len() as u64,
-        "media_type": media_type,
-    }))
+    let phash = (want_phash && media_type.starts_with("image/"))
+        .then(|| phash::of_jpeg(&bytes))
+        .flatten()
+        .map(phash::tag);
+    Ok(Ingested {
+        value: json!({
+            "content_id": content_id,
+            "size": bytes.len() as u64,
+            "media_type": media_type,
+        }),
+        phash,
+    })
 }
 
 /// A record id as one name in Skykeep's photo cache.
