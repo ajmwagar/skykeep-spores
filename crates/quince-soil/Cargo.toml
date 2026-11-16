@@ -11,6 +11,7 @@ anyhow.workspace = true
 blake3 = "1"
 jiff = "0.2.37"
 quince-core = { path = "../quince-core" }
+rusqlite = { version = "0.41.1", features = ["bundled"] }
 serde.workspace = true
 serde_json.workspace = true
 

@@ -16,6 +16,8 @@
 //! immutable, and syncs by reference. Putting bytes in a record body would make every sync
 //! pass carry a library.
 
+pub mod macos;
+
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -69,9 +71,31 @@ pub struct Batch {
     pub content: Vec<Content>,
 }
 
+/// The books each domain's records land in.
+///
+/// iCloud is one source into the system's own books, not a book of its own: a contact the
+/// bridge writes opens in the system contacts Spore and one typed there is readable here,
+/// because both are the `contacts` book. The same holds for calendars and photos.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Books {
+    pub contacts: String,
+    pub calendar: String,
+    pub photos: String,
+}
+
+impl Default for Books {
+    fn default() -> Self {
+        Self {
+            contacts: "contacts".to_string(),
+            calendar: "calendar".to_string(),
+            photos: "photos".to_string(),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Options {
-    pub book: String,
+    pub books: Books,
     /// Skykeep's `photos/` cache directory (under its state dir). Absent: records only, with
     /// every `content` field `null`, which is what a host holding no photo bytes should show.
     pub cache: Option<PathBuf>,
@@ -80,7 +104,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            book: "icloud".to_string(),
+            books: Books::default(),
             cache: None,
         }
     }
@@ -99,8 +123,8 @@ pub fn export(data: &Path, options: &Options) -> Result<Batch> {
 /// Project an already-open library, for callers (and tests) that own one.
 pub fn project(library: &Library, options: &Options) -> Result<Batch> {
     let mut batch = Batch::default();
-    batch.records.extend(contacts(library, &options.book)?);
-    batch.records.extend(events(library, &options.book)?);
+    batch.records.extend(contacts(library, &options.books.contacts)?);
+    batch.records.extend(events(library, &options.books.calendar)?);
     let (records, content) = photos(library, options)?;
     batch.records.extend(records);
     batch.content.extend(content);
@@ -221,13 +245,14 @@ fn rfc3339(seconds: i64) -> String {
 // Photos, albums and the bytes they point at.
 
 fn photos(library: &Library, options: &Options) -> Result<(Vec<Record>, Vec<Content>)> {
+    let book = &options.books.photos;
     let photos = library.photos(View::Library).context("read photos")?;
     let mut records = Vec::with_capacity(photos.len());
     let mut content = Vec::new();
     for photo in &photos {
         let (body, mut blobs) = asset(photo, options.cache.as_deref())?;
         records.push(Record {
-            book: options.book.clone(),
+            book: book.clone(),
             id: photo.id.clone(),
             schema: ASSET_SCHEMA.to_string(),
             body,
@@ -245,7 +270,7 @@ fn photos(library: &Library, options: &Options) -> Result<(Vec<Record>, Vec<Cont
                 .ids
         };
         records.push(Record {
-            book: options.book.clone(),
+            book: book.clone(),
             id: album.id.clone(),
             schema: ALBUM_SCHEMA.to_string(),
             body: json!({
@@ -261,7 +286,7 @@ fn photos(library: &Library, options: &Options) -> Result<(Vec<Record>, Vec<Cont
         // on every add.
         for (position, asset) in items.into_iter().enumerate() {
             records.push(Record {
-                book: options.book.clone(),
+                book: book.clone(),
                 id: format!("{}/{}", album.id, asset),
                 schema: ALBUM_ITEM_SCHEMA.to_string(),
                 body: json!({

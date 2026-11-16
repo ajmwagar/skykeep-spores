@@ -98,7 +98,7 @@ fn a_contact_carries_every_field_the_contacts_book_validates() {
     assert_eq!(body["emails"][0]["value"], "ada@acme.example");
     assert_eq!(body["phones"][0]["label"], "mobile");
     assert_eq!(batch.records[0].id, "contact-1");
-    assert_eq!(batch.records[0].book, "icloud");
+    assert_eq!(batch.records[0].book, "contacts");
 }
 
 #[test]
@@ -179,7 +179,7 @@ fn a_cached_original_becomes_a_content_id_and_the_album_a_membership_record() {
     std::fs::write(cache.join("original/P1"), b"not really a jpeg").unwrap();
 
     let options = Options {
-        book: "icloud".into(),
+        books: Default::default(),
         cache: Some(cache),
     };
     let batch = quince_soil::project(&library, &options).unwrap();
