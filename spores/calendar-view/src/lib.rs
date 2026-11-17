@@ -7,7 +7,10 @@
 
 wit_bindgen::generate!({ path: "wit", world: "runner", generate_all });
 
+mod text;
+
 use serde_json::Value;
+use text::Face;
 use soil::present::surface;
 use soil::records::records;
 
@@ -20,6 +23,7 @@ const RULE: [u8; 4] = [226, 229, 234, 0xff];
 const HEADER: [u8; 4] = [244, 246, 249, 0xff];
 
 struct Event {
+    summary: String,
     /// `YYYY-MM-DD`, the day it starts on.
     day: String,
     /// Minutes from midnight.
@@ -82,6 +86,11 @@ fn load() -> (Vec<Event>, String) {
                 _ => minute + 60,
             };
             events.push(Event {
+                summary: body
+                    .get("summary")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
                 day,
                 from: minute,
                 to: to.max(minute + 15),
@@ -195,28 +204,68 @@ fn draw(width: u32, height: u32, week: &[&Event], monday: String) -> Vec<u8> {
     for pixel in canvas.chunks_exact_mut(4) {
         pixel.copy_from_slice(&BACKGROUND);
     }
-    let header = 34;
+    let face = Face::regular();
+    let strong = Face::medium();
+    let ink = [31u8, 35, 40, 0xff];
+    let muted = [110u8, 116, 128, 0xff];
+
+    let gutter = 44u32;
+    let header = 44u32;
     fill(&mut canvas, width, height, 0, 0, width, header, HEADER);
-    // Remainder pixels go to the early columns, so seven columns fill the width.
-    let column_at = |day: u32| day * width / DAYS;
-    // A day is 24 hours; the grid starts at 06:00 because nothing before it is
-    // ever filled in.
+    let column_at = |day: u32| gutter + day * (width - gutter) / DAYS;
+
+    // Day letters, one per column, centred.
+    let initials = ["M", "T", "W", "T", "F", "S", "S"];
+    for day in 0..DAYS {
+        let left = column_at(day) as f32;
+        let right = column_at(day + 1) as f32;
+        let room = right - left;
+        let letter = initials[day as usize];
+        let advance = strong.width(letter, 15.0);
+        strong.draw(
+            &mut canvas,
+            width,
+            height,
+            (left + (room - advance) / 2.0) as i32,
+            14,
+            15.0,
+            ink,
+            letter,
+        );
+    }
+
     let start_minute = 6 * 60;
     let area = height.saturating_sub(header + 8);
-    for day in 0..DAYS {
-        let x = column_at(day);
-        let next = column_at(day + 1);
-        fill(&mut canvas, width, height, x, header, 1, area, RULE);
-        for hour in 0..18 {
-            let y = header + hour * area / 18;
-            fill(&mut canvas, width, height, x, y, next - x, 1, RULE);
-        }
+    // Hour labels every three hours, and the rules that line up with them.
+    for mark in 0..7 {
+        let hour = 6 + mark * 3;
+        let y = header + (mark as u32 * 3) * area / 18;
+        let label = format!("{hour:02}:00");
+        face.draw(
+            &mut canvas,
+            width,
+            height,
+            6,
+            y as i32 + 1,
+            11.0,
+            muted,
+            &label,
+        );
+        fill(&mut canvas, width, height, gutter, y, width - gutter, 1, RULE);
     }
+    for day in 0..DAYS {
+        fill(&mut canvas, width, height, column_at(day), header, 1, area, RULE);
+    }
+
     for event in week {
         let Some(day) = day_index(&event.day, &monday) else {
             continue;
         };
-        let from = if event.all_day { start_minute } else { event.from.max(start_minute) };
+        let from = if event.all_day {
+            start_minute
+        } else {
+            event.from.max(start_minute)
+        };
         let to = if event.all_day {
             from + 60
         } else {
@@ -224,18 +273,35 @@ fn draw(width: u32, height: u32, week: &[&Event], monday: String) -> Vec<u8> {
         };
         let top = header + ((from - start_minute) * area as i64 / (18 * 60)) as u32;
         let bottom = header + ((to - start_minute) * area as i64 / (18 * 60)) as u32;
-        let x = column_at(day as u32) + 2;
+        let left = column_at(day as u32) + 2;
+        let right = column_at(day as u32 + 1);
+        let block_height = (bottom.saturating_sub(top)).max(14);
         let colour = calendar_colour(&event.calendar);
         fill(
             &mut canvas,
             width,
             height,
-            x,
+            left,
             top,
-            (column_at(day as u32 + 1) - column_at(day as u32)).saturating_sub(4),
-            (bottom.saturating_sub(top)).max(3),
+            (right.saturating_sub(4)).saturating_sub(left),
+            block_height,
             colour,
         );
+        // A block says what it is when there is room for a line of type.
+        if block_height >= 15 {
+            let room = (right.saturating_sub(left) as f32) - 10.0;
+            face.draw_clipped(
+                &mut canvas,
+                width,
+                height,
+                left as i32 + 4,
+                top as i32 + 3,
+                10.5,
+                room,
+                [255, 255, 255, 0xff],
+                &event.summary,
+            );
+        }
     }
     canvas
 }
