@@ -1,0 +1,19 @@
+[package]
+name = "calendar-view"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# No GPU, no window toolkit: this Spore lays out and rasterizes in software and hands the
+# host one RGBA frame. `default-features = false` keeps the decoder free of a rayon pool,
+# which a wasm guest has no threads for.
+jpeg-decoder = { version = "0.3", default-features = false }
+serde_json = "1"
+wit-bindgen = "0.57"

@@ -1,0 +1,39 @@
+schema = 1
+
+[spore]
+id = "org.skykeep.calendar-view"
+name = "calendar-view"
+title = "Skykeep Calendar (view)"
+version = "0.1.0"
+license = "GPL-3.0-only"
+summary = "A week of the calendar the sync half wrote, drawn by the Spore"
+description = "Reads `fungos.calendar/event` from `soil:records`, lays one week out as seven day columns with a block per event, and presents one RGBA frame through `soil:present`. A block's colour is its calendar; a block's height is its duration. No font yet: a block is a shape, and the text arrives with the canvas text node."
+homepage = "https://github.com/ajmwagar/skykeep-spores"
+
+[engine]
+soil = ">=0.1"
+target = "wasm32-wasip2"
+abi = { records = "0.1.0", surface = "0.1.0" }
+
+[module]
+path = "module.wasm"
+
+[launch]
+default = "native"
+surfaces = ["native"]
+
+[records]
+collections = ["fungos.calendar/event"]
+book = "calendar"
+
+[grants]
+"soil:records" = "read the events collection; the view is a reader"
+"soil:present" = "hand the host one RGBA frame per render"
+
+[denied]
+"soil:http" = ["a view never talks to Apple or Google"]
+"wasi:filesystem" = ["there is no file to read: an event is a record"]
+
+[presentation]
+badge = "Ca"
+color = "#5b8def"
