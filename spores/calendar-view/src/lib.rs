@@ -7,9 +7,11 @@
 
 wit_bindgen::generate!({ path: "wit", world: "runner", generate_all });
 
+mod paint;
 mod text;
 
 use serde_json::Value;
+use paint::{Rgba, fill as rect, mix, rounded};
 use text::Face;
 use soil::present::surface;
 use soil::records::records;
@@ -18,9 +20,9 @@ const EVENT_SCHEMA: &str = "fungos.calendar/event";
 const PAGE: u32 = 256;
 const SCAN: usize = 100_000;
 const DAYS: u32 = 7;
-const BACKGROUND: [u8; 4] = [250, 250, 252, 0xff];
-const RULE: [u8; 4] = [226, 229, 234, 0xff];
-const HEADER: [u8; 4] = [244, 246, 249, 0xff];
+const _UNUSED_BACKGROUND: [u8; 4] = [250, 250, 252, 0xff];
+const _UNUSED_RULE: [u8; 4] = [226, 229, 234, 0xff];
+const _UNUSED_HEADER: [u8; 4] = [244, 246, 249, 0xff];
 
 struct Event {
     summary: String,
@@ -199,121 +201,204 @@ fn from_civil(days: i64) -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
+const SURFACE: Rgba = [245, 246, 248, 0xff];
+const CARD: Rgba = [255, 255, 255, 0xff];
+const BORDER: Rgba = [228, 231, 236, 0xff];
+const INK: Rgba = [17, 24, 39, 0xff];
+const MUTED: Rgba = [107, 114, 128, 0xff];
+const FAINT: Rgba = [156, 163, 175, 0xff];
+const GRID: Rgba = [238, 240, 243, 0xff];
+const MONTHS: [&str; 12] = [
+    "January", "February", "March", "April", "May", "June", "July", "August", "September",
+    "October", "November", "December",
+];
+
+/// Where one event lands: its lane inside a day, and how many lanes that day
+/// needs, so two things at the same hour sit beside each other rather than on
+/// top of each other.
+struct Slot<'a> {
+    event: &'a Event,
+    day: u32,
+    from: i64,
+    to: i64,
+    lane: u32,
+    lanes: u32,
+}
+
 fn draw(width: u32, height: u32, week: &[&Event], monday: String) -> Vec<u8> {
     let mut canvas = vec![0u8; width as usize * height as usize * 4];
-    for pixel in canvas.chunks_exact_mut(4) {
-        pixel.copy_from_slice(&BACKGROUND);
-    }
+    rect(&mut canvas, width, height, 0, 0, width as i32, height as i32, SURFACE);
+
     let face = Face::regular();
     let strong = Face::medium();
-    let ink = [31u8, 35, 40, 0xff];
-    let muted = [110u8, 116, 128, 0xff];
 
-    let gutter = 44u32;
-    let header = 44u32;
-    fill(&mut canvas, width, height, 0, 0, width, header, HEADER);
-    let column_at = |day: u32| gutter + day * (width - gutter) / DAYS;
+    // The card: a hairline border with a white face inside it.
+    let (cx, cy) = (18.0, 16.0);
+    let (cw, ch) = (width as f32 - 36.0, height as f32 - 32.0);
+    rounded(&mut canvas, width, height, cx, cy, cw, ch, 16.0, BORDER);
+    rounded(&mut canvas, width, height, cx + 1.0, cy + 1.0, cw - 2.0, ch - 2.0, 15.0, CARD);
 
-    // Day letters, one per column, centred.
-    let initials = ["M", "T", "W", "T", "F", "S", "S"];
+    // ---- header -----------------------------------------------------------
+    let monday_days = civil_of(&monday).unwrap_or(0);
+    let sunday = from_civil(monday_days + 6);
+    let _ = (&sunday, first_day(&monday), last_day_of(&sunday));
+    let label = format!("{} {}", month_name(&monday), year(&monday));
+    strong.draw(&mut canvas, width, height, (cx + 26.0) as i32, (cy + 16.0) as i32, 19.0, INK, &label);
+    let count = format!("{} events", week.len());
+    let advance = strong.width(&label, 19.0);
+    face.draw(&mut canvas, width, height, (cx + 36.0 + advance) as i32, (cy + 23.0) as i32, 10.5, FAINT, &count);
+
+    let gutter = 62.0;
+    let inner = cx + 26.0;
+    let column_width = (cw - 52.0 - gutter) / DAYS as f32;
+    let column_at = |day: u32| inner + gutter + day as f32 * column_width;
+    let weekdays = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+
     for day in 0..DAYS {
-        let left = column_at(day) as f32;
-        let right = column_at(day + 1) as f32;
-        let room = right - left;
-        let letter = initials[day as usize];
-        let advance = strong.width(letter, 15.0);
-        strong.draw(
-            &mut canvas,
-            width,
-            height,
-            (left + (room - advance) / 2.0) as i32,
-            14,
-            15.0,
-            ink,
-            letter,
-        );
+        let x = column_at(day);
+        let centre = x + column_width / 2.0;
+        let letter = weekdays[day as usize];
+        let advance = face.width(letter, 9.5);
+        face.draw(&mut canvas, width, height, (centre - advance / 2.0) as i32, (cy + 44.0) as i32, 9.5, FAINT, letter);
+        let number = day_number(&from_civil(monday_days + day as i64));
+        let advance = strong.width(&number, 14.0);
+        strong.draw(&mut canvas, width, height, (centre - advance / 2.0) as i32, (cy + 58.0) as i32, 14.0, INK, &number);
     }
 
+    // ---- all-day band -----------------------------------------------------
+    let all_day_top = cy + 84.0;
+    let mut band = all_day_top;
+    let all_day: Vec<&Event> = week.iter().copied().filter(|event| event.all_day).collect();
+    if !all_day.is_empty() {
+        for (index, event) in all_day.iter().enumerate() {
+            let Some(day) = day_index(&event.day, &monday) else { continue };
+            let x = column_at(day as u32) + 3.0;
+            let y = band + index as f32 * 20.0;
+            let accent = calendar_colour(&event.calendar);
+            let chip = mix(CARD, accent, 0.18);
+            rounded(&mut canvas, width, height, x, y, column_width - 6.0, 17.0, 5.0, chip);
+            rounded(&mut canvas, width, height, x, y, 3.0, 17.0, 1.5, accent);
+            face.draw_clipped(&mut canvas, width, height, (x + 7.0) as i32, (y + 3.0) as i32, 9.0,
+                column_width - 20.0, INK, &event.summary);
+        }
+        band += all_day.len() as f32 * 20.0 + 6.0;
+    }
+
+    // ---- grid -------------------------------------------------------------
+    let grid_top = (band + 6.0).max(cy + 108.0);
+    let grid_bottom = cy + ch - 14.0;
     let start_minute = 6 * 60;
-    let area = height.saturating_sub(header + 8);
-    // Hour labels every three hours, and the rules that line up with them.
-    for mark in 0..7 {
-        let hour = 6 + mark * 3;
-        let y = header + (mark as u32 * 3) * area / 18;
-        let label = format!("{hour:02}:00");
-        face.draw(
-            &mut canvas,
-            width,
-            height,
-            6,
-            y as i32 + 1,
-            11.0,
-            muted,
-            &label,
-        );
-        fill(&mut canvas, width, height, gutter, y, width - gutter, 1, RULE);
+    let hours = 18.0;
+    let hour_height = (grid_bottom - grid_top) / hours;
+    for mark in 0..=18 {
+        let y = grid_top + mark as f32 * hour_height;
+        let width_of_rule = if mark % 3 == 0 { 1.0 } else { 1.0 };
+        rect(&mut canvas, width, height, inner as i32, y as i32, (cw - 52.0) as i32, width_of_rule as i32,
+            if mark % 3 == 0 { GRID } else { mix(CARD, GRID, 0.5) });
+        if mark % 3 == 0 && mark < 18 {
+            let label = format!("{:02}:00", 6 + mark);
+            let advance = face.width(&label, 9.5);
+            face.draw(&mut canvas, width, height, (inner + gutter - 12.0 - advance) as i32,
+                (y - 5.0) as i32, 9.5, FAINT, &label);
+        }
     }
-    for day in 0..DAYS {
-        fill(&mut canvas, width, height, column_at(day), header, 1, area, RULE);
+    for day in 1..DAYS {
+        let x = column_at(day);
+        rect(&mut canvas, width, height, x as i32, (cy + 40.0) as i32, 1, (grid_bottom - cy - 40.0) as i32, GRID);
     }
 
+    // ---- events -----------------------------------------------------------
+    let mut slots: Vec<Slot> = Vec::new();
     for event in week {
-        let Some(day) = day_index(&event.day, &monday) else {
-            continue;
-        };
-        let from = if event.all_day {
-            start_minute
-        } else {
-            event.from.max(start_minute)
-        };
-        let to = if event.all_day {
-            from + 60
-        } else {
-            event.to.min(start_minute + 18 * 60).max(from + 20)
-        };
-        let top = header + ((from - start_minute) * area as i64 / (18 * 60)) as u32;
-        let bottom = header + ((to - start_minute) * area as i64 / (18 * 60)) as u32;
-        let left = column_at(day as u32) + 2;
-        let right = column_at(day as u32 + 1);
-        let block_height = (bottom.saturating_sub(top)).max(14);
-        let colour = calendar_colour(&event.calendar);
-        fill(
-            &mut canvas,
-            width,
-            height,
-            left,
-            top,
-            (right.saturating_sub(4)).saturating_sub(left),
-            block_height,
-            colour,
-        );
-        // A block says what it is when there is room for a line of type.
-        if block_height >= 15 {
-            let room = (right.saturating_sub(left) as f32) - 10.0;
-            face.draw_clipped(
-                &mut canvas,
-                width,
-                height,
-                left as i32 + 4,
-                top as i32 + 3,
-                10.5,
-                room,
-                [255, 255, 255, 0xff],
-                &event.summary,
-            );
+        let Some(day) = day_index(&event.day, &monday) else { continue };
+        let from = if event.all_day { start_minute } else { event.from.max(start_minute) };
+        let to = if event.all_day { from } else { event.to.min(start_minute + 18 * 60).max(from + 20) };
+        if event.all_day { continue }
+        slots.push(Slot { event, day: day as u32, from, to, lane: 0, lanes: 1 });
+    }
+    // Lanes: within a connected run of overlapping events, the first free one.
+    slots.sort_by_key(|slot| (slot.day, slot.from, slot.to));
+    let mut index = 0;
+    while index < slots.len() {
+        let day = slots[index].day;
+        let mut end = index;
+        let mut group_end = slots[index].to;
+        while end + 1 < slots.len() && slots[end + 1].day == day && slots[end + 1].from < group_end {
+            end += 1;
+            group_end = group_end.max(slots[end].to);
+        }
+        let mut lane_ends: Vec<i64> = Vec::new();
+        for slot in slots[index..=end].iter_mut() {
+            let lane = lane_ends.iter().position(|end| *end <= slot.from).unwrap_or(lane_ends.len());
+            if lane == lane_ends.len() { lane_ends.push(slot.to) } else { lane_ends[lane] = slot.to }
+            slot.lane = lane as u32;
+        }
+        let lanes = lane_ends.len() as u32;
+        for slot in slots[index..=end].iter_mut() { slot.lanes = lanes }
+        index = end + 1;
+    }
+
+    for slot in &slots {
+        let lane_width = (column_width - 6.0) / slot.lanes as f32;
+        let x = column_at(slot.day) + 3.0 + lane_width * slot.lane as f32;
+        let top = grid_top + (slot.from - start_minute) as f32 / 60.0 * hour_height;
+        let bottom = grid_top + (slot.to - start_minute) as f32 / 60.0 * hour_height;
+        let height_of = (bottom - top).max(16.0);
+        let accent = calendar_colour(&slot.event.calendar);
+        let chip = mix(CARD, accent, 0.16);
+        let w = (lane_width - 3.0).max(8.0);
+        rounded(&mut canvas, width, height, x, top, w, height_of, 5.0, chip);
+        rounded(&mut canvas, width, height, x, top, 2.5, height_of, 1.25, accent);
+        let room = w - 12.0;
+        face.draw_clipped(&mut canvas, width, height, (x + 7.0) as i32, (top + 3.0) as i32, 9.5, room, INK, &slot.event.summary);
+        if height_of >= 30.0 {
+            let time = format!("{:02}:{:02}", slot.from / 60, slot.from % 60);
+            face.draw_clipped(&mut canvas, width, height, (x + 7.0) as i32, (top + 16.0) as i32, 8.5, room, MUTED, &time);
         }
     }
     canvas
 }
 
+fn civil_of(date: &str) -> Option<i64> {
+    let (year, month, day) = parts(date)?;
+    Some(civil(year, month, day))
+}
+
+fn month_name(date: &str) -> &'static str {
+    date.get(5..7)
+        .and_then(|month| month.parse::<usize>().ok())
+        .and_then(|month| MONTHS.get(month.saturating_sub(1)))
+        .copied()
+        .unwrap_or("")
+}
+
+fn year(date: &str) -> String {
+    date.get(0..4).unwrap_or_default().to_string()
+}
+
+fn first_day(date: &str) -> String {
+    day_number(date)
+}
+
+fn last_day_of(date: &str) -> String {
+    day_number(date)
+}
+
+fn day_number(date: &str) -> String {
+    date.get(8..10)
+        .and_then(|day| day.parse::<u32>().ok())
+        .map(|day| day.to_string())
+        .unwrap_or_default()
+}
+
 /// A stable colour per calendar: the name, hashed.
-fn calendar_colour(name: &str) -> [u8; 4] {
+fn calendar_colour(name: &str) -> Rgba {
     let mut hash: u32 = 2_166_136_261;
     for byte in name.bytes() {
         hash = (hash ^ u32::from(byte)).wrapping_mul(16_777_619);
     }
     let hue = (hash % 360) as f32;
-    let (r, g, b) = hsv(hue, 0.55, 0.86);
+    let (r, g, b) = hsv(hue, 0.62, 0.82);
     [r, g, b, 0xff]
 }
 
@@ -334,15 +419,6 @@ fn hsv(hue: f32, saturation: f32, value: f32) -> (u8, u8, u8) {
         ((g + m) * 255.0) as u8,
         ((b + m) * 255.0) as u8,
     )
-}
-
-fn fill(canvas: &mut [u8], width: u32, height: u32, x0: u32, y0: u32, w: u32, h: u32, colour: [u8; 4]) {
-    for y in y0..y0.saturating_add(h).min(height) {
-        for x in x0..x0.saturating_add(w).min(width) {
-            let at = ((y * width + x) as usize) * 4;
-            canvas[at..at + 4].copy_from_slice(&colour);
-        }
-    }
 }
 
 struct Component;
