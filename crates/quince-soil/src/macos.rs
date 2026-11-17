@@ -24,7 +24,7 @@ use serde_json::{json, Value};
 
 use crate::{
     asset_body, ingest, AssetDraft, Batch, Record, ALBUM_ITEM_SCHEMA, ALBUM_SCHEMA, ASSET_SCHEMA,
-    CONTACT_SCHEMA,
+    CONTACT_SCHEMA, EVENT_SCHEMA,
 };
 
 /// The address book's SQLite file, by the name macOS has used for years.
@@ -563,6 +563,175 @@ fn previews(root: &Path) -> BTreeMap<String, PathBuf> {
     out.into_iter()
         .map(|(uuid, (_, path))| (uuid, path))
         .collect()
+}
+
+// ---------------------------------------------------------------------------------------------
+// Calendars.
+
+/// Calendar.app's EventKit store, inside its group container.
+const CALENDAR_DATABASE: &str = "Calendar.sqlitedb";
+
+/// Read every event in a Calendar store, as `fungos.calendar/event` records.
+///
+/// `dir` is the container `Calendar.sqlitedb` lives in, or the database itself.
+/// The store is the same kind of undocumented Core Data schema as the address
+/// book and Photos: every column is looked up before it is used, a missing one
+/// reads as null, and a missing `CalendarItem` table is the loud failure.
+///
+/// Two conversions matter. Core Data counts seconds from 2001-01-01, and
+/// `start_tz` is the zone the event was entered in, which is what makes an
+/// all-day event land on the right day rather than the day before in UTC.
+pub fn events_from_calendar(dir: &Path, book: &str) -> Result<Vec<Record>> {
+    let path = if dir.is_dir() {
+        dir.join(CALENDAR_DATABASE)
+    } else {
+        dir.to_path_buf()
+    };
+    let conn = Connection::open_with_flags(
+        &path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .with_context(|| format!("open {} (read-only)", path.display()))?;
+
+    let item_columns = columns(&conn, "CalendarItem")?;
+    if item_columns.is_empty() {
+        anyhow::bail!(
+            "{} has no CalendarItem table: not a Calendar database",
+            path.display()
+        );
+    }
+    let pick = |name: &str| -> String {
+        if item_columns.iter().any(|column| column == name) {
+            name.to_string()
+        } else {
+            "NULL".to_string()
+        }
+    };
+
+    // The calendar an event belongs to is its category, and a title is the only
+    // thing a reader can show without its own list of colours.
+    let mut titles: BTreeMap<i64, String> = BTreeMap::new();
+    if !columns(&conn, "Calendar")?.is_empty() {
+        let mut statement = conn
+            .prepare("SELECT ROWID, title FROM Calendar")
+            .context("read Calendar")?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        for (id, title) in rows {
+            titles.insert(id, title.unwrap_or_default());
+        }
+    }
+
+    let sql = format!(
+        "SELECT ROWID, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {} FROM CalendarItem",
+        pick("summary"),
+        pick("description"),
+        pick("start_date"),
+        pick("end_date"),
+        pick("all_day"),
+        pick("start_tz"),
+        pick("url"),
+        pick("sequence_num"),
+        pick("creation_date"),
+        pick("last_modified"),
+        pick("external_id"),
+        pick("calendar_id"),
+    );
+    let mut statement = conn.prepare(&sql).context("read CalendarItem")?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<f64>>(3)?,
+                row.get::<_, Option<f64>>(4)?,
+                row.get::<_, Option<i64>>(5)?,
+                row.get::<_, Option<String>>(6)?,
+                row.get::<_, Option<String>>(7)?,
+                row.get::<_, Option<i64>>(8)?,
+                row.get::<_, Option<f64>>(9)?,
+                row.get::<_, Option<f64>>(10)?,
+                row.get::<_, Option<String>>(11)?,
+                row.get::<_, Option<i64>>(12)?,
+            ))
+        })
+        .context("walk CalendarItem")?;
+
+    let mut out = Vec::new();
+    for row in rows {
+        let (
+            rowid,
+            summary,
+            description,
+            start,
+            end,
+            all_day,
+            timezone,
+            url,
+            sequence,
+            created,
+            modified,
+            external,
+            calendar,
+        ) = row?;
+        // An event with no start cannot be placed on a calendar or in a window.
+        let Some(start) = start else {
+            continue;
+        };
+        // A CalDAV path ends in the event's UUID, which is the identity a
+        // second reader of the same account would use too. Without one, a row
+        // number is only unique inside this database, so it says so.
+        let uid = external
+            .as_deref()
+            .and_then(|path| path.rsplit('/').next())
+            .map(|name| name.trim_end_matches(".ics"))
+            .filter(|name| !name.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("macos-{rowid}"));
+        let category = calendar
+            .and_then(|id| titles.get(&id).cloned())
+            .unwrap_or_default();
+        out.push(Record {
+            book: book.to_string(),
+            id: uid.clone(),
+            schema: EVENT_SCHEMA.to_string(),
+            body: json!({
+                "summary": summary.unwrap_or_default(),
+                "description": description.unwrap_or_default(),
+                "location": "",
+                "status": "",
+                "uid": uid,
+                "start": instant(start),
+                "end": end.map(instant).unwrap_or_default(),
+                "duration": "",
+                "all_day": all_day.unwrap_or(0) != 0,
+                "timezone": timezone.unwrap_or_default(),
+                "rrule": "",
+                "categories": if category.is_empty() { Vec::<String>::new() } else { vec![category] },
+                "organizer": { "name": "", "value": "" },
+                "attendees": Vec::<Value>::new(),
+                "url": url.unwrap_or_default(),
+                "created": created.map(instant).unwrap_or_default(),
+                "last_modified": modified.map(instant).unwrap_or_default(),
+                "sequence": sequence.map(|value| value.to_string()).unwrap_or_default(),
+                "raw_ics": "",
+                "raw_timezones": Vec::<String>::new(),
+            }),
+        });
+    }
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(out)
+}
+
+/// Core Data seconds as the RFC 3339 UTC string an iCalendar body carries.
+fn instant(seconds: f64) -> String {
+    jiff::Timestamp::from_second(core_data_seconds(seconds))
+        .map(|timestamp| timestamp.to_string())
+        .unwrap_or_default()
 }
 
 /// Core Data counts seconds from 2001-01-01.

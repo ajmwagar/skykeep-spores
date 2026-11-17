@@ -24,6 +24,7 @@ const USAGE: &str = "\
 usage:
   quince-soil export --data <DIR> [--cache <DIR>] [--book <BOOK>] [-o FILE]
   quince-soil macos-contacts --data <AddressBook DIR> [--book NAME] [-o FILE]
+  quince-soil macos-calendar --data <Calendar container DIR> [--book NAME] [-o FILE]
   quince-soil macos-photos --library <Photos Library.photoslibrary> [--book NAME]
                              [--no-phash] [-o FILE]
 
@@ -68,6 +69,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
         }
         Some("export") => export(&args[1..]),
         Some("macos-contacts") => macos_contacts(&args[1..]),
+        Some("macos-calendar") => macos_calendar(&args[1..]),
         Some("macos-photos") => macos_photos(&args[1..]),
         Some(other) => Err(format!("unknown command {other}\n\n{USAGE}")),
     }
@@ -214,6 +216,50 @@ fn macos_photos(args: &[String]) -> Result<(), String> {
             .map_err(|error| format!("write {}: {error}", path.display()))?,
         None => println!("{text}"),
     }
+    Ok(())
+}
+
+/// `macos-calendar`: the events Calendar.app already holds, no Apple ID involved.
+fn macos_calendar(args: &[String]) -> Result<(), String> {
+    let mut dir = None;
+    let mut book = "calendar".to_string();
+    let mut out = None;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--data" => {
+                dir = Some(PathBuf::from(
+                    args.get(index + 1).ok_or("--data needs a directory")?,
+                ));
+                index += 2;
+            }
+            "--book" => {
+                book = args.get(index + 1).ok_or("--book needs a name")?.to_string();
+                index += 2;
+            }
+            "-o" | "--out" => {
+                out = Some(PathBuf::from(
+                    args.get(index + 1).ok_or("-o needs a file")?,
+                ));
+                index += 2;
+            }
+            other => return Err(format!("unknown argument {other}\\n\\n{USAGE}")),
+        }
+    }
+    let dir = dir.ok_or_else(|| format!("--data is required\\n\\n{USAGE}"))?;
+    let records = quince_soil::macos::events_from_calendar(&dir, &book)
+        .map_err(|error| format!("{error:#}"))?;
+    let batch = quince_soil::Batch {
+        records,
+        content: Vec::new(),
+    };
+    let text = serde_json::to_string(&batch).map_err(|error| format!("encode batch: {error}"))?;
+    match out {
+        Some(path) => std::fs::write(&path, &text)
+            .map_err(|error| format!("write {}: {error}", path.display()))?,
+        None => println!("{text}"),
+    }
+    eprintln!("{} events", batch.records.len());
     Ok(())
 }
 
