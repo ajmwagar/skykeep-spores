@@ -28,6 +28,14 @@ impl Face {
         }
     }
 
+    /// Distance from the top of a line to its baseline.
+    fn ascent(&self, size: f32) -> i32 {
+        self.font
+            .horizontal_line_metrics(size)
+            .map(|metrics| metrics.ascent.round() as i32)
+            .unwrap_or((size * 0.8) as i32)
+    }
+
     pub fn width(&self, text: &str, size: f32) -> f32 {
         text.chars()
             .map(|character| self.font.metrics(character, size).advance_width)
@@ -47,13 +55,16 @@ impl Face {
         colour: [u8; 4],
         text: &str,
     ) -> i32 {
+        let baseline = y + self.ascent(size);
         let mut pen = x as f32;
         for character in text.chars() {
             let (metrics, coverage) = self.font.rasterize(character, size);
             let left = pen as i32 + metrics.xmin;
-            // `fontdue` hands back coverage top-down, row-major, with the glyph's
-            // top-left at (`xmin`, `ymin`) from the pen position.
-            let top = y + metrics.ymin;
+            // `ymin` is the glyph's bottom measured up from the baseline, so the
+            // bitmap's first row sits that far below the baseline minus its own
+            // height. Anchoring on `ymin` alone put descenders a line too high,
+            // which reads as a stray mark above the letter before them.
+            let top = baseline - metrics.ymin - metrics.height as i32;
             for row in 0..metrics.height {
                 for column in 0..metrics.width {
                     let alpha = coverage[row * metrics.width + column];

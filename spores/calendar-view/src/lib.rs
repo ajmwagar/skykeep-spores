@@ -208,6 +208,8 @@ const INK: Rgba = [17, 24, 39, 0xff];
 const MUTED: Rgba = [107, 114, 128, 0xff];
 const FAINT: Rgba = [156, 163, 175, 0xff];
 const GRID: Rgba = [238, 240, 243, 0xff];
+const NOW: Rgba = [232, 72, 85, 0xff];
+
 const MONTHS: [&str; 12] = [
     "January", "February", "March", "April", "May", "June", "July", "August", "September",
     "October", "November", "December",
